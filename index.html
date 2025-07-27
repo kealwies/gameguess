@@ -1,1152 +1,997 @@
-import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
-
-// Firebase Imports
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, orderBy } from 'firebase/firestore';
-
-
-// Create a context for game state management
-const GameContext = createContext();
-
-// Utility function to generate a random game code
-const generateGameCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-
-// Custom Modal/Message Box Component
-const MessageBox = ({ message, type, onClose }) => {
-    if (!message) return null;
-
-    const bgColor = type === 'error' ? 'bg-red-900' : 'bg-indigo-900';
-    const borderColor = type === 'error' ? 'border-red-700' : 'border-indigo-700';
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className={`relative ${bgColor} border-2 ${borderColor} rounded-2xl shadow-neon-red-sm p-8 max-w-sm w-full text-center transform scale-100 animate-pop-in-bounce`}>
-                <p className="text-white text-2xl font-extrabold mb-6 tracking-wide text-shadow-sm">{message}</p>
-                <button
-                    onClick={onClose}
-                    className="bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-3 px-8 rounded-lg shadow-button-neon-glow transform transition-all duration-300 hover:scale-105 border-b-4 border-purple-900 hover:border-purple-950 text-base animate-pulse-btn"
-                >
-                    Got it!
-                </button>
-            </div>
-        </div>
-    );
-};
-
-// Player Avatar Component
-const PlayerAvatar = ({ name, size = 'md' }) => {
-    const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0,1) : '?'; // Only first initial
-    const sizeClasses = {
-        sm: 'w-8 h-8 text-xs', // Very small
-        md: 'w-10 h-10 text-sm', // Small
-        lg: 'w-12 h-12 text-base', // Medium
-    };
-    return (
-        <div className={`flex items-center justify-center rounded-full bg-gradient-to-br from-red-600 to-purple-700 text-white font-extrabold ${sizeClasses[size]} shadow-avatar-neon-glow flex-shrink-0 border-2 border-red-400 animate-avatar-float`}>
-            {initials}
-        </div>
-    );
-};
-
-// HomePage Component
-const HomePage = () => {
-    const { setPlayerName, setGameCode, createGame, joinGame } = useContext(GameContext);
-    const [nameInput, setNameInput] = useState('');
-    const [joinCodeInput, setJoinCodeInput] = useState('');
-    const [showJoinInput, setShowJoinInput] = useState(false);
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
-
-    const handleCreateGame = () => {
-        if (nameInput.trim()) {
-            setPlayerName(nameInput.trim());
-            createGame();
-        } else {
-            setMessage('Who are you, mysterious player? Enter your name!');
-            setMessageType('error');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Ultimate Guessing Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
-    };
-
-    const handleJoinGame = () => {
-        if (nameInput.trim() && joinCodeInput.trim()) {
-            setPlayerName(nameInput.trim());
-            setGameCode(joinCodeInput.trim().toUpperCase());
-            joinGame(joinCodeInput.trim().toUpperCase());
-        } else {
-            setMessage('Don\'t be shy! Enter your name AND the secret code!');
-            setMessageType('error');
+        h1, h2, h3 {
+            font-family: 'Orbitron', sans-serif;
         }
-    };
 
-    return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
-            <div className="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
-            <div className="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
-                <h1 className="text-4xl font-extrabold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow leading-tight tracking-wide">
-                    The Ultimate Guessing Game
-                </h1>
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0a0a0a;
+            border-radius: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #dc2626;
+            border-radius: 8px;
+            border: 2px solid #b91c1c;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #ef4444;
+        }
 
-                <input
-                    type="text"
-                    placeholder="Your Epic Player Name"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    className="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center"
-                />
+        /* Background Grid Glow Animation (Red/Dark theme) */
+        @keyframes bg-grid-glow-red {
+            0% { background-position: 0% 0%; filter: hue-rotate(0deg); }
+            100% { background-position: 200% 200%; filter: hue-rotate(360deg); }
+        }
+        .animate-bg-grid-glow-red {
+            background-image: linear-gradient(rgba(220, 38, 38, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(220, 38, 38, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: bg-grid-glow-red 100s linear infinite;
+        }
 
-                <button
-                    onClick={handleCreateGame}
-                    className="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-red transform transition-all duration-300 hover:scale-105 mb-4 text-xl border-b-4 border-red-900 hover:border-red-950 animate-pulse-btn"
-                >
-                    Forge New Destiny (Create Game)
-                </button>
+        /* Background Grid Glow Animation (Blue/Dark theme) */
+        @keyframes bg-grid-glow-blue {
+            0% { background-position: 0% 0%; filter: hue-rotate(0deg); }
+            100% { background-position: 200% 200%; filter: hue-rotate(360deg); }
+        }
+        .animate-bg-grid-glow-blue {
+            background-image: linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: bg-grid-glow-blue 100s linear infinite;
+        }
 
-                {!showJoinInput && (
-                    <button
-                        onClick={() => setShowJoinInput(true)}
-                        className="w-full bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-purple transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-purple-800 hover:border-purple-900 animate-pulse-btn"
-                    >
-                        Join Epic Quest (Join with Code)
-                    </button>
-                )}
+        /* Text Neon Glitch Glow */
+        @keyframes text-glitch-glow {
+            0%, 100% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(0,0); opacity: 1; }
+            10% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-2px, 2px); opacity: 0.9; }
+            20% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(2px, -2px); opacity: 1; }
+            30% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #00ffff, 0 0 28px #00ffff, 0 0 36px #00ffff; transform: translate(-1px, 1px); opacity: 0.9; }
+            40% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(1px, -1px); opacity: 1; }
+            50% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-3px, 3px); opacity: 0.8; }
+            60% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(3px, -3px); opacity: 1; }
+            70% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #00ffff, 0 0 28px #00ffff, 0 0 36px #00ffff; transform: translate(-2px, 2px); opacity: 0.9; }
+            80% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(2px, -2px); opacity: 1; }
+            90% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-1px, 1px); opacity: 0.9; }
+        }
+        .animate-text-glitch-glow {
+            animation: text-glitch-glow 4s infinite alternate;
+        }
 
-                {showJoinInput && (
-                    <div className="mt-6">
-                        <input
-                            type="text"
-                            placeholder="Secret Game Code"
-                            value={joinCodeInput}
-                            onChange={(e) => setJoinCodeInput(e.target.value)}
-                            className="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-purple-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-purple-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-purple text-center"
-                        />
-                        <button
-                            onClick={handleJoinGame}
-                            className="w-full bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-blue transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-indigo-800 hover:border-indigo-900 animate-pulse-btn"
-                        >
-                            Embark!
+        /* Button Neon Glow (Red) */
+        @keyframes button-neon-glow-red {
+            0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.7), 0 0 20px rgba(220, 38, 38, 0.5), 0 0 30px rgba(220, 38, 38, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(220, 38, 38, 0.9), 0 0 30px rgba(220, 38, 38, 0.7), 0 0 45px rgba(220, 38, 38, 0.5); }
+        }
+        .shadow-button-neon-glow-red {
+            animation: button-neon-glow-red 2.5s infinite alternate;
+        }
+
+        /* Button Neon Glow (Purple) */
+        @keyframes button-neon-glow-purple {
+            0%, 100% { box-shadow: 0 0 10px rgba(168, 85, 247, 0.7), 0 0 20px rgba(168, 85, 247, 0.5), 0 0 30px rgba(168, 85, 247, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(168, 85, 247, 0.9), 0 0 30px rgba(168, 85, 247, 0.7), 0 0 45px rgba(168, 85, 247, 0.5); }
+        }
+        .shadow-button-neon-glow-purple {
+            animation: button-neon-glow-purple 2.5s infinite alternate;
+        }
+
+        /* Button Neon Glow (Blue) */
+        @keyframes button-neon-glow-blue {
+            0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.7), 0 0 20px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(59, 130, 246, 0.9), 0 0 30px rgba(59, 130, 246, 0.7), 0 0 45px rgba(59, 130, 246, 0.5); }
+        }
+        .shadow-button-neon-glow-blue {
+            animation: button-neon-glow-blue 2.5s infinite alternate;
+        }
+
+        /* Button Neon Glow (Yellow) */
+        @keyframes button-neon-glow-yellow {
+            0%, 100% { box-shadow: 0 0 10px rgba(252, 211, 77, 0.7), 0 0 20px rgba(252, 211, 77, 0.5), 0 0 30px rgba(252, 211, 77, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(252, 211, 77, 0.9), 0 0 30px rgba(252, 211, 77, 0.7), 0 0 45px rgba(252, 211, 77, 0.5); }
+        }
+        .shadow-button-neon-glow-yellow {
+            animation: button-neon-glow-yellow 2.5s infinite alternate;
+        }
+
+        /* Button Neon Glow (Green) */
+        @keyframes button-neon-glow-green {
+            0%, 100% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.7), 0 0 20px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(34, 197, 94, 0.9), 0 0 30px rgba(34, 197, 94, 0.7), 0 0 45px rgba(34, 197, 94, 0.5); }
+        }
+        .shadow-button-neon-glow-green {
+            animation: button-neon-glow-green 2.5s infinite alternate;
+        }
+
+        /* Smaller Pulse Button */
+        @keyframes pulse-btn {
+            0% { transform: scale(1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 0 rgba(0,0,0,0); }
+            50% { transform: scale(1.02); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 10px rgba(255,255,255,0.3); }
+            100% { transform: scale(1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 0 rgba(0,0,0,0); }
+        }
+        .animate-pulse-btn {
+            animation: pulse-btn 2.5s infinite ease-in-out;
+        }
+
+        /* Fade In Up (Small) */
+        @keyframes fade-in-up-sm {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up-sm {
+            animation: fade-in-up-sm 0.9s ease-out forwards;
+        }
+
+        /* Fade In Left (Small) */
+        @keyframes fade-in-left-sm {
+            from { opacity: 0; transform: translateX(-50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-fade-in-left-sm {
+            animation: fade-in-left-sm 0.9s ease-out forwards;
+        }
+
+        /* Fade In Right (Small) */
+        @keyframes fade-in-right-sm {
+            from { opacity: 0; transform: translateX(50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-fade-in-right-sm {
+            animation: fade-in-right-sm 0.9s ease-out forwards;
+        }
+
+        /* Pop In with Bounce */
+        @keyframes pop-in-bounce {
+            0% { transform: scale(0.7); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            75% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .animate-pop-in-bounce {
+            animation: pop-in-bounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Message Pop In */
+        @keyframes message-pop-in {
+            from { opacity: 0; transform: translateY(10px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-message-pop-in {
+            animation: message-pop-in 0.3s ease-out forwards;
+        }
+
+        /* Avatar Float */
+        @keyframes avatar-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+        .animate-avatar-float {
+            animation: avatar-float 2.5s infinite ease-in-out;
+        }
+
+        /* Text Pulse */
+        @keyframes pulse-text {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.01); opacity: 0.95; }
+        }
+        .animate-pulse-text {
+            animation: pulse-text 1.8s infinite ease-in-out;
+        }
+
+        /* Custom Shadows (Smaller versions) */
+        .shadow-neon-red-sm {
+            box-shadow: 0 0 15px rgba(220, 38, 38, 0.6), 0 0 30px rgba(220, 38, 38, 0.4);
+        }
+        .shadow-neon-purple-sm {
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.6), 0 0 30px rgba(168, 85, 247, 0.4);
+        }
+        .shadow-neon-blue-sm {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.6), 0 0 30px rgba(59, 130, 246, 0.4);
+        }
+        .shadow-neon-green-sm {
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.6), 0 0 30px rgba(34, 197, 94, 0.4);
+        }
+        .shadow-inner-neon-red {
+            box-shadow: inset 0 0 10px rgba(220, 38, 38, 0.25), inset 0 0 15px rgba(220, 38, 38, 0.1);
+        }
+        .shadow-inner-neon-purple {
+            box-shadow: inset 0 0 10px rgba(168, 85, 247, 0.25), inset 0 0 15px rgba(168, 85, 247, 0.1);
+        }
+        .shadow-inner-neon-yellow {
+            box-shadow: inset 0 0 10px rgba(252, 211, 77, 0.25), inset 0 0 15px rgba(252, 211, 77, 0.1);
+        }
+        .shadow-avatar-neon-glow {
+            box-shadow: 0 0 8px rgba(220, 38, 38, 0.4), 0 0 15px rgba(168, 85, 247, 0.2);
+        }
+        .shadow-message {
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.15), 0 0 3px rgba(255,255,255,0.08);
+        }
+        .text-shadow-lg {
+            text-shadow: 0 0 6px rgba(255,255,255,0.5), 0 0 10px rgba(255,255,255,0.3);
+        }
+        .text-shadow-sm {
+            text-shadow: 0 0 4px rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body class="font-inter">
+    <div id="app-root">
+        <!-- Content will be rendered here by JavaScript -->
+        <div class="flex items-center justify-center min-h-screen bg-black text-white text-2xl animate-pulse">
+            Initializing Quantum Game Engine...
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // Global State Variables
+        let gamePhase = 'home';
+        let playerName = '';
+        let otherPlayerName = '';
+        let gameCode = '';
+        let messages = [];
+        let thinkerId = null;
+        let guesserId = null;
+        let currentPlayerId = null;
+        let correctCharacter = '';
+        let playerSeries = '';
+        let playerCharacter = '';
+        let otherPlayerSeries = '';
+        let otherPlayerCharacter = '';
+        let db = null;
+        let auth = null;
+        let isAuthReady = false;
+        let messageCount = 0; // For hint cooldown
+
+        // Firebase Configuration (Your provided keys)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDG108yI9TJltunEG4GFI0Kyah60QCjk4M",
+            authDomain: "guessgame-7b132.firebaseapp.com",
+            projectId: "guessgame-7b132",
+            storageBucket: "guessgame-7b132.firebasestorage.app",
+            messagingSenderId: "294083866383",
+            appId: "1:294083866383:web:ad24d06184ea45595d987a",
+            measurementId: "G-8EQG8B29ZV"
+        };
+        const GEMINI_API_KEY = "AIzaSyD2dY5BdDz8Q_Bixchg3XNkaHA36wBVMfA"; // Your Gemini API Key
+
+        // --- Utility Functions ---
+        const generateGameCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+        const getAppId = () => typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; // Fallback for local dev
+
+        // --- DOM Manipulation Helpers ---
+        const getElement = (id) => document.getElementById(id);
+        const setHtml = (id, html) => {
+            const el = getElement(id);
+            if (el) el.innerHTML = html;
+        };
+        const showElement = (id) => {
+            const el = getElement(id);
+            if (el) el.classList.remove('hidden');
+        };
+        const hideElement = (id) => {
+            const el = getElement(id);
+            if (el) el.classList.add('hidden');
+        };
+
+        // --- Message Box Logic ---
+        function showMessageBox(msg, type) {
+            const appRoot = getElement('app-root');
+            const messageBoxHtml = `
+                <div id="message-box-overlay" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4 animate-fade-in">
+                    <div class="relative ${type === 'error' ? 'bg-red-900' : 'bg-indigo-900'} border-2 ${type === 'error' ? 'border-red-700' : 'border-indigo-700'} rounded-2xl shadow-neon-red-sm p-8 max-w-sm w-full text-center transform scale-100 animate-pop-in-bounce">
+                        <p class="text-white text-2xl font-extrabold mb-6 tracking-wide text-shadow-sm">${msg}</p>
+                        <button id="message-box-ok-btn" class="bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-3 px-8 rounded-lg shadow-button-neon-glow transform transition-all duration-300 hover:scale-105 border-b-4 border-purple-900 hover:border-purple-950 text-base animate-pulse-btn">
+                            Got it!
                         </button>
                     </div>
-                )}
-            </div>
-            <MessageBox message={message} type={messageType} onClose={() => setMessage('')} />
-        </div>
-    );
-};
-
-// GameLobby Component
-const GameLobby = () => {
-    const { db, auth, userId, isAuthReady, gameCode, playerName, otherPlayerName, setGamePhase, setOtherPlayerName, setThinkerId, setGuesserId, currentPlayerId } = useContext(GameContext);
-    const [isCopied, setIsCopied] = useState(false);
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
-
-    useEffect(() => {
-        if (!db || !isAuthReady || !gameCode || !userId) return;
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
-
-        const unsubscribe = onSnapshot(gameRoomRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const players = data.players || {};
-                const playerIds = Object.keys(players);
-
-                const otherPlayerId = playerIds.find(id => id !== userId);
-                if (otherPlayerId && players[otherPlayerId]) {
-                    setOtherPlayerName(players[otherPlayerId].name);
-                    // If both players are connected, move to character setup
-                    if (playerIds.length === 2) {
-                        setGamePhase('characterSetup');
-                    }
-                }
-            } else {
-                // Handle case where game room might not exist (e.g., if joining non-existent code)
-                console.error("Game room does not exist:", gameCode);
-                // Optionally, navigate back to home or show an error
-            }
-        }, (error) => {
-            console.error("Error listening to game room:", error);
-            setMessage("Error joining game. Please try again.");
-            setMessageType("error");
-        });
-
-        return () => unsubscribe();
-    }, [db, isAuthReady, gameCode, userId, setOtherPlayerName, setGamePhase]);
-
-
-    const copyCodeToClipboard = () => {
-        const el = document.createElement('textarea');
-        el.value = gameCode;
-        document.body.appendChild(el);
-        el.select();
-        try {
-            document.execCommand('copy');
-            setIsCopied(true);
-            setMessage('Game code copied to clipboard! Share it with your comrade!');
-            setMessageType('info');
-            setTimeout(() => {
-                setIsCopied(false);
-                setMessage('');
-            }, 2000);
-        } catch (err) {
-            console.error('Failed to copy text: ', err);
-            setMessage('Clipboard magic failed! Copy manually: ' + gameCode);
-            setMessageType('error');
-        } finally {
-            document.body.removeChild(el);
-        }
-    };
-
-    return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
-            <div className="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
-            <div className="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
-                <h2 className="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow">
-                    The Grand Lobby
-                </h2>
-
-                <p className="text-xl mb-4 font-semibold text-shadow-sm">
-                    Game Code: <span className="font-mono text-yellow-400 text-3xl font-extrabold tracking-wider animate-pulse-text">{gameCode}</span>
-                </p>
-                <button
-                    onClick={copyCodeToClipboard}
-                    className="bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-3 px-6 rounded-xl shadow-button-neon-glow-red transition duration-300 ease-in-out transform hover:scale-105 mb-6 border-b-4 border-red-900 hover:border-red-950 text-base animate-pulse-btn"
-                >
-                    {isCopied ? 'Copied to Scroll!' : 'Copy Code to Scroll'}
-                </button>
-
-                <div className="flex justify-around items-center mb-8 bg-gray-900 bg-opacity-70 p-4 rounded-xl border-2 border-gray-800 shadow-inner-neon-red animate-fade-in">
-                    <div className="text-center flex flex-col items-center">
-                        <PlayerAvatar name={playerName} size="lg" />
-                        <p className="text-lg font-semibold mt-2 text-shadow-sm">You:</p>
-                        <p className="text-2xl text-red-300 font-bold tracking-wide text-shadow-sm">{playerName}</p>
-                    </div>
-                    <div className="text-center flex flex-col items-center">
-                        <PlayerAvatar name={otherPlayerName} size="lg" />
-                        <p className="text-lg font-semibold mt-2 text-shadow-sm">Your Rival:</p>
-                        <p className="text-2xl text-purple-300 font-bold tracking-wide text-shadow-sm">
-                            {otherPlayerName || 'Summoning...'}
-                        </p>
-                    </div>
                 </div>
-
-                <p className="text-base text-gray-300 text-shadow-sm">
-                    Prepare your mind! Once your comrade arrives, the ritual of character selection begins.
-                </p>
-                <p className="text-sm text-gray-400 mt-2">
-                    (In this simulation, a virtual challenger will appear shortly)
-                </p>
-            </div>
-            <MessageBox message={message} type={messageType} onClose={() => setMessage('')} />
-        </div>
-    );
-};
-
-// CharacterSetupPage Component
-const CharacterSetupPage = () => {
-    const { db, auth, userId, isAuthReady, gameCode, playerName, otherPlayerName, setGamePhase, setThinkerId, setGuesserId, currentPlayerId,
-            setPlayerCharacter, setPlayerSeries, setOtherPlayerCharacter, setOtherPlayerSeries } = useContext(GameContext);
-    const [seriesInput, setSeriesInput] = useState('');
-    const [characterInput, setCharacterInput] = useState('');
-    const [isSubmitted, setIsSubmitted] = useState(false);
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
-
-    useEffect(() => {
-        if (!db || !isAuthReady || !gameCode || !userId) return;
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
-
-        const unsubscribe = onSnapshot(gameRoomRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const players = data.players || {};
-                const playerIds = Object.keys(players);
-
-                const otherPlayerId = playerIds.find(id => id !== userId);
-                if (otherPlayerId && players[otherPlayerId]) {
-                    setOtherPlayerName(players[otherPlayerId].name);
-                    setOtherPlayerSeries(players[otherPlayerId].series || '');
-                    setOtherPlayerCharacter(players[otherPlayerId].character || '');
-
-                    const allPlayersReady = playerIds.length === 2 &&
-                                            players[playerIds[0]].character && players[playerIds[0]].series &&
-                                            players[playerIds[1]].character && players[playerIds[1]].series;
-
-                    if (allPlayersReady) { // Both players have submitted characters
-                        // Randomly assign roles for the first round
-                        const p1Id = playerIds[0];
-                        const p2Id = playerIds[1];
-                        if (Math.random() > 0.5) {
-                            setThinkerId(p1Id);
-                            setGuesserId(p2Id);
-                        } else {
-                            setThinkerId(p2Id);
-                            setGuesserId(p1Id);
-                        }
-                        setGamePhase('game');
-                    }
-                }
-            }
-        }, (error) => {
-            console.error("Error listening to character setup:", error);
-            setMessage("Error setting up character. Please try again.");
-            setMessageType("error");
-        });
-
-        return () => unsubscribe();
-    }, [db, isAuthReady, gameCode, userId, setOtherPlayerName, setOtherPlayerSeries, setOtherPlayerCharacter, setGamePhase, setThinkerId, setGuesserId]);
-
-
-    const handleSubmitCharacter = async () => {
-        if (seriesInput.trim() && characterInput.trim() && db && userId) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
-
-            await updateDoc(gameRoomRef, {
-                [`players.${userId}.series`]: seriesInput.trim(),
-                [`players.${userId}.character`]: characterInput.trim(),
-            });
-            setPlayerSeries(seriesInput.trim());
-            setPlayerCharacter(characterInput.trim());
-            setIsSubmitted(true);
-            setMessage('Your secret is safe! Waiting for your opponent to choose their fate...');
-            setMessageType('info');
-        } else {
-            setMessage('Even heroes need to fill out forms! Series and Character, please!');
-            setMessageType('error');
-        }
-    };
-
-    return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
-            <div className="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
-            <div className="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
-                <h2 className="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow">
-                    Choose Your Champion!
-                </h2>
-
-                <p className="text-base mb-4 text-gray-300 text-shadow-sm">
-                    Select a character from any Anime, Manga, or Novel. Keep it a secret!
-                </p>
-
-                <input
-                    type="text"
-                    placeholder="Series Name (e.g., Jujutsu Kaisen)"
-                    value={seriesInput}
-                    onChange={(e) => setSeriesInput(e.target.value)}
-                    className="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center"
-                    disabled={isSubmitted}
-                />
-                <input
-                    type="text"
-                    placeholder="Character Name (e.g., Satoru Gojo)"
-                    value={characterInput}
-                    onChange={(e) => setCharacterInput(e.target.value)}
-                    className="w-full p-3 mb-6 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center"
-                    disabled={isSubmitted}
-                />
-
-                <button
-                    onClick={handleSubmitCharacter}
-                    className="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-4 px-6 rounded-xl shadow-button-neon-glow-red transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-red-900 hover:border-red-950 animate-pulse-btn"
-                    disabled={isSubmitted}
-                >
-                    {isSubmitted ? 'Awaiting Rival\'s Choice...' : 'Lock In Your Secret!'}
-                </button>
-            </div>
-            <MessageBox message={message} type={messageType} onClose={() => setMessage('')} />
-        </div>
-    );
-};
-
-
-// GameChat Interface
-const GameChat = () => {
-    const {
-        db, auth, userId, isAuthReady,
-        gameCode,
-        playerName,
-        otherPlayerName,
-        messages,
-        setMessages,
-        thinkerId,
-        guesserId,
-        currentPlayerId,
-        setGamePhase,
-        setCorrectCharacter,
-        switchRoles,
-        playerSeries,
-        playerCharacter,
-        otherPlayerSeries,
-        otherPlayerCharacter
-    } = useContext(GameContext);
-
-    const [currentMessage, setCurrentMessage] = useState('');
-    const [guessInput, setGuessInput] = useState('');
-    const [showGuessInput, setShowGuessInput] = useState(false);
-    const [feedbackMessage, setFeedbackMessage] = useState('');
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
-    const [isGeneratingHint, setIsGeneratingHint] = useState(false);
-    const [messageCount, setMessageCount] = useState(0); // For hint cooldown
-    const chatEndRef = useRef(null);
-
-    const isThinker = thinkerId === currentPlayerId;
-    const isGuesser = guesserId === currentPlayerId;
-
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
-
-    // Listen for real-time messages from Firestore
-    useEffect(() => {
-        if (!db || !gameCode) return;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
-        const q = query(messagesRef, orderBy('timestamp'));
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedMessages = snapshot.docs.map(doc => ({
-                ...doc.data(),
-                id: doc.id,
-                isMine: doc.data().senderId === userId // Determine if message is from current user
-            }));
-            setMessages(fetchedMessages);
-            // Update message count based on fetched messages for hint cooldown
-            setMessageCount(fetchedMessages.filter(msg => msg.role !== 'AI').length);
-        }, (error) => {
-            console.error("Error fetching messages:", error);
-            setMessage("Failed to load messages. Please check console.");
-            setMessageType("error");
-        });
-
-        return () => unsubscribe();
-    }, [db, gameCode, userId, setMessages]);
-
-
-    const handleSendMessage = async () => {
-        if (currentMessage.trim() && db && userId) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
-
-            await addDoc(messagesRef, {
-                senderId: userId,
-                senderName: playerName,
-                text: currentMessage.trim(),
-                timestamp: new Date(),
-                role: isThinker ? 'Thinker' : 'Guesser'
-            });
-            setCurrentMessage('');
-            // Message count is now updated by the onSnapshot listener
-        }
-    };
-
-    const handleMakeGuess = async () => {
-        if (guessInput.trim() && db && userId) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
-
-            const actualCorrectCharacter = isGuesser ? otherPlayerCharacter : playerCharacter;
-            const actualCorrectSeries = isGuesser ? otherPlayerSeries : playerSeries;
-
-            if (guessInput.trim().toLowerCase() === actualCorrectCharacter.toLowerCase()) {
-                setFeedbackMessage(`Victory! The character was indeed ${actualCorrectCharacter} from ${actualCorrectSeries}! You are a true master! (Or just lucky. Mostly lucky.)`);
-                setMessageType('info');
-                setCorrectCharacter(`${actualCorrectCharacter} (${actualCorrectSeries})`);
-
-                // Record the correct guess in Firestore
-                await addDoc(messagesRef, {
-                    senderId: userId,
-                    senderName: playerName,
-                    text: `I guess: ${guessInput.trim()} - CORRECT!`,
-                    timestamp: new Date(),
-                    role: 'Guesser' // Or a special 'Guess' role
-                });
-                // Update game state in Firestore for round end and role switch
-                const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
-                await updateDoc(gameRoomRef, {
-                    lastCorrectGuess: { character: actualCorrectCharacter, series: actualCorrectSeries, guesserId: userId },
-                    status: 'roundEnded',
-                    thinkerId: guesserId, // Swap roles for next round
-                    guesserId: thinkerId,
-                    // Clear character choices for next round in real app, or prompt for new ones
-                });
-
-                setTimeout(() => setGamePhase('endRound'), 2000);
-            } else {
-                setFeedbackMessage('A valiant effort, but alas, your guess was as off as a villain\'s redemption arc! Try again! (And maybe read more books. Seriously.)');
-                setMessageType('error');
-                // Record the wrong guess in Firestore
-                await addDoc(messagesRef, {
-                    senderId: userId,
-                    senderName: playerName,
-                    text: `I guess: ${guessInput.trim()} - WRONG!`,
-                    timestamp: new Date(),
-                    role: 'Guesser'
-                });
-            }
-            setShowGuessInput(false);
-            setGuessInput('');
-            // Message count updated by onSnapshot
-        }
-    };
-
-    const handleGetHint = async () => {
-        if (messageCount < 4) {
-            setMessage(`The Oracle is busy contemplating its superiority. You need ${4 - messageCount} more questions/guesses before it deigns to help.`);
-            setMessageType('error');
-            return;
+            `;
+            appRoot.insertAdjacentHTML('beforeend', messageBoxHtml);
+            getElement('message-box-ok-btn').onclick = hideMessageBox;
         }
 
-        setIsGeneratingHint(true);
-        setMessage('Summoning the Oracle of Sarcasm for a hint... this might hurt your ego.');
-        setMessageType('info');
+        function hideMessageBox() {
+            const overlay = getElement('message-box-overlay');
+            if (overlay) overlay.remove();
+        }
 
-        const targetCharacter = isGuesser ? otherPlayerCharacter : playerCharacter;
-        const targetSeries = isGuesser ? otherPlayerSeries : playerSeries;
-
-        const chatHistoryForLLM = messages.map(msg => ({
-            role: msg.isMine ? "user" : "model",
-            parts: [{ text: msg.text }]
-        }));
-
-        const prompt = `You are a highly sarcastic, witty, and slightly unhinged AI assistant. The user is playing a guessing game about characters from Anime, Manga, or Novels. They need a *subtle, funny, or sarcastic hint* for the character "${targetCharacter}" from the series "${targetSeries}". Do NOT directly reveal the character's name or series. Make it sound like you're reluctantly helping, or even mocking their lack of insight. Consider the following conversation history to avoid redundant hints, but feel free to twist previous answers. Keep it concise, entertaining, and perhaps a little condescending. Examples: "They're known for their peculiar fashion sense, or lack thereof, depending on your taste for capes.", "If they had a catchphrase, it would probably involve shouting. A lot.", "Their life story is a masterclass in 'things going wrong, but in a dramatic way.'", "They probably spend too much time thinking about friendship, or revenge. One of those.", "Their power level is over 9000... or maybe just enough to trip over their own feet."`;
-
-        try {
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
+        // --- Player Avatar Logic ---
+        function getPlayerAvatarHtml(name, size) {
+            const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0,1) : '?';
+            const sizeClasses = {
+                sm: 'w-8 h-8 text-xs',
+                md: 'w-10 h-10 text-sm',
+                lg: 'w-12 h-12 text-base',
             };
-            const apiKey = "AIzaSyD2dY5BdDz8Q_Bixchg3XNkaHA36wBVMfA"; // Gemini API Key
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const result = await response.json();
-
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                const hintText = result.candidates[0].content.parts[0].text;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
-                await addDoc(messagesRef, {
-                    senderId: 'AI_ASSISTANT', // Unique ID for AI
-                    senderName: 'Sarcastic AI',
-                    text: `AI Oracle: ${hintText}`,
-                    timestamp: new Date(),
-                    role: 'AI'
-                });
-                setMessage('');
-                // Message count will be reset by onSnapshot
-            } else {
-                setMessage('The AI is currently contemplating the meaning of existence. Or perhaps it just thinks your questions are beneath it. Try again later.');
-                setMessageType('error');
-            }
-        } catch (error) {
-            console.error('Error fetching hint:', error);
-            setMessage('My circuits are buzzing with existential dread. Cannot provide hint right now. Also, your internet might be broken. Just saying.');
-            setMessageType('error');
-        } finally {
-            setIsGeneratingHint(false);
+            return `
+                <div class="flex items-center justify-center rounded-full bg-gradient-to-br from-red-600 to-purple-700 text-white font-extrabold ${sizeClasses[size]} shadow-avatar-neon-glow flex-shrink-0 border-2 border-red-400 animate-avatar-float">
+                    ${initials}
+                </div>
+            `;
         }
-    };
 
+        // --- Render Functions for Pages ---
+        function renderHomePage() {
+            setHtml('app-root', `
+                <div class="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
+                    <div class="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
+                    <div class="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
+                        <h1 class="text-4xl font-extrabold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow leading-tight tracking-wide">
+                            The Ultimate Guessing Game
+                        </h1>
 
-    return (
-        <div className="relative flex min-h-screen bg-gradient-to-br from-black via-blue-950 to-indigo-950 text-white p-6 overflow-hidden font-sans">
-            <div className="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-blue"></div>
+                        <input id="name-input" type="text" placeholder="Your Epic Player Name" class="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center" />
 
-            {/* Sidebar */}
-            <div className="relative z-10 w-64 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-3xl shadow-neon-purple-md border-3 border-purple-700 mr-6 flex flex-col animate-fade-in-left-sm">
-                <h3 className="text-3xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-yellow-300 animate-text-glitch-glow text-shadow-sm">
-                    Awesome
-                </h3>
-                <div className="flex flex-col space-y-4">
-                    <div className="flex items-center bg-gray-900 bg-opacity-70 p-3 rounded-xl shadow-inner-neon-red border-2 border-gray-800">
-                        <PlayerAvatar name={playerName} size="sm" />
-                        <div className="ml-3">
-                            <p className="text-lg font-semibold text-shadow-sm">{playerName}</p>
-                            <p className={`text-xs mt-1 ${isThinker ? 'text-red-400 font-bold' : 'text-purple-400 font-bold'}`}>
-                                {isThinker ? 'Thinker (You)' : 'Guesser (You)'}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center bg-gray-900 bg-opacity-70 p-3 rounded-xl shadow-inner-neon-purple border-2 border-gray-800">
-                        <PlayerAvatar name={otherPlayerName} size="sm" />
-                        <div className="ml-3">
-                            <p className="text-lg font-semibold text-shadow-sm">{otherPlayerName}</p>
-                            <p className={`text-xs mt-1 ${!isThinker ? 'text-red-400 font-bold' : 'text-purple-400 font-bold'}`}>
-                                {!isThinker ? 'Thinker (Rival)' : 'Guesser (Rival)'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Chat Area */}
-            <div className="relative z-10 flex-grow bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-8 rounded-3xl shadow-neon-red-md border-3 border-red-700 flex flex-col animate-fade-in-right-md">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-orange-300 to-yellow-300 animate-text-glitch-glow">
-                        The Grand Interrogation
-                    </h2>
-                    {isGuesser && (
-                        <button
-                            onClick={handleGetHint}
-                            className={`bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-2 px-4 rounded-lg shadow-button-neon-glow-purple transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-purple-900 hover:border-purple-950 text-sm ${isGeneratingHint || messageCount < 4 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            disabled={isGeneratingHint || messageCount < 4}
-                        >
-                            {isGeneratingHint ? 'Summoning...' : `Hint (${messageCount}/4)`}
+                        <button id="create-game-btn" class="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-red transform transition-all duration-300 hover:scale-105 mb-4 text-xl border-b-4 border-red-900 hover:border-red-950 animate-pulse-btn">
+                            Forge New Destiny (Create Game)
                         </button>
-                    )}
-                </div>
 
-                <div className="flex-grow bg-gray-900 bg-opacity-70 p-5 rounded-2xl mb-6 overflow-y-auto custom-scrollbar border-2 border-gray-800 shadow-inner-neon-red animate-fade-in" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-                    {messages.length === 0 && (
-                        <p className="text-center text-gray-500 mt-4 text-base text-shadow-sm">
-                            The stage is set! {isThinker ? `You're thinking of a character from ${playerSeries}.` : `It's your turn to unravel the mystery of ${otherPlayerSeries}'s character! Ask away!`}
-                        </p>
-                    )}
-                    {messages.map((msg, index) => (
-                        <div key={index} className={`mb-3 flex items-start ${msg.isMine ? 'justify-end' : 'justify-start'} animate-message-pop-in`}>
-                            {!msg.isMine && <PlayerAvatar name={msg.sender} size="sm" />}
-                            <div className={`p-3 rounded-lg max-w-[75%] shadow-message transition-all duration-300 ${msg.isMine ? 'bg-red-700 text-white ml-3 border-2 border-red-500' : 'bg-gray-700 text-gray-100 mr-3 border-2 border-gray-600'} ${msg.role === 'AI' ? 'bg-purple-800 border-2 border-purple-600 shadow-neon-purple' : ''}`}>
-                                <p className="font-bold text-xs mb-1 opacity-80 text-red-200">
-                                    {msg.sender} ({msg.role})
-                                </p>
-                                <p className="text-sm leading-relaxed">{msg.text}</p>
-                            </div>
-                            {msg.isMine && <PlayerAvatar name={msg.sender} size="sm" />}
-                        </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                </div>
+                        <button id="show-join-input-btn" class="w-full bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-purple transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-purple-800 hover:border-purple-900 animate-pulse-btn">
+                            Join Epic Quest (Join with Code)
+                        </button>
 
-                {feedbackMessage && (
-                    <div className={`text-center py-3 rounded-xl mb-6 text-lg font-semibold animate-fade-in ${feedbackMessage.includes('Victory') ? 'bg-green-700 shadow-neon-green-md' : 'bg-red-700 shadow-neon-red-md'}`}>
-                        {feedbackMessage}
-                    </div>
-                )}
-
-                <div className="flex mt-auto gap-3">
-                    <input
-                        type="text"
-                        placeholder={isGuesser ? "Unleash your question..." : "Craft your witty response..."}
-                        value={currentMessage}
-                        onChange={(e) => setCurrentMessage(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                        className="flex-grow p-3 bg-gray-900 bg-opacity-70 border-2 border-gray-800 rounded-lg focus:outline-none focus:ring-4 focus:ring-red-400 text-base placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red"
-                        disabled={!isGuesser && !isThinker}
-                    />
-                    <button
-                        onClick={handleSendMessage}
-                        className="bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-3 px-6 rounded-lg shadow-button-neon-glow-red transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-red-900 hover:border-red-950 text-base"
-                        disabled={!isGuesser && !isThinker}
-                    >
-                        Send It!
-                    </button>
-                </div>
-
-                {isGuesser && (
-                    <div className="mt-6 text-center flex flex-col md:flex-row gap-3">
-                        {!showGuessInput ? (
-                            <button
-                                onClick={() => setShowGuessInput(true)}
-                                className="flex-grow bg-gradient-to-r from-yellow-600 to-orange-700 hover:from-yellow-700 hover:to-orange-800 text-white font-bold py-4 px-8 rounded-lg shadow-button-neon-glow-yellow transform transition-all duration-300 hover:scale-105 border-b-4 border-yellow-800 hover:border-yellow-900 animate-pulse-btn"
-                            >
-                                Make Your Grand Guess!
+                        <div id="join-game-section" class="mt-6 hidden">
+                            <input id="join-code-input" type="text" placeholder="Secret Game Code" class="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-purple-600 rounded-lg focus:outline-none focus:ring-4 focus:ring-purple-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-purple text-center" />
+                            <button id="join-game-btn" class="w-full bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-700 hover:to-blue-800 text-white font-bold py-4 px-6 rounded-lg shadow-button-neon-glow-blue transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-indigo-800 hover:border-indigo-900 animate-pulse-btn">
+                                Embark!
                             </button>
-                        ) : (
-                            <div className="flex flex-grow gap-3">
-                                <input
-                                    type="text"
-                                    placeholder="Your Masterful Guess (Series & Character)"
-                                    value={guessInput}
-                                    onChange={(e) => setGuessInput(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && handleMakeGuess()}
-                                    className="flex-grow p-3 bg-gray-900 bg-opacity-70 border-2 border-gray-800 rounded-lg focus:outline-none focus:ring-4 focus:ring-yellow-400 text-base placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-yellow"
-                                />
-                                <button
-                                    onClick={handleMakeGuess}
-                                    className="bg-gradient-to-r from-green-600 to-teal-700 hover:from-green-700 hover:to-teal-800 text-white font-bold py-3 px-6 rounded-lg shadow-button-neon-glow-green transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-green-800 hover:border-green-900 text-base"
-                                >
-                                    Confirm Destiny!
-                                </button>
-                            </div>
-                        )}
+                        </div>
                     </div>
-                )}
-            </div>
-            <MessageBox message={message} type={messageType} onClose={() => setMessage('')} />
-        </div>
-    );
-};
+                </div>
+            `);
 
-// EndOfRoundScreen Component
-const EndOfRoundScreen = () => {
-    const { correctCharacter, switchRoles, setGamePhase } = useContext(GameContext);
+            // Attach event listeners
+            getElement('name-input').oninput = (e) => playerName = e.target.value;
+            getElement('create-game-btn').onclick = () => {
+                if (playerName.trim()) {
+                    createGame();
+                } else {
+                    showMessageBox('Who are you, mysterious player? Enter your name!', 'error');
+                }
+            };
+            getElement('show-join-input-btn').onclick = () => {
+                showElement('join-game-section');
+                hideElement('show-join-input-btn');
+            };
+            getElement('join-code-input').oninput = (e) => gameCode = e.target.value;
+            getElement('join-game-btn').onclick = () => {
+                if (playerName.trim() && gameCode.trim()) {
+                    joinGame(gameCode.trim().toUpperCase());
+                } else {
+                    showMessageBox('Don\'t be shy! Enter your name AND the secret code!', 'error');
+                }
+            };
+        }
 
-    const handleSwitchRoles = () => {
-        switchRoles();
-        setGamePhase('characterSetup'); // Go back to character setup for new round
-    };
+        function renderGameLobby() {
+            setHtml('app-root', `
+                <div class="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
+                    <div class="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
+                    <div class="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
+                        <h2 class="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow">
+                            The Grand Lobby
+                        </h2>
 
-    return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
-            <div className="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
-            <div className="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
-                <h2 className="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow leading-tight">
-                    Round Concluded!
-                </h2>
+                        <p class="text-xl mb-4 font-semibold text-shadow-sm">
+                            Game Code: <span class="font-mono text-yellow-400 text-3xl font-extrabold tracking-wider animate-pulse-text">${gameCode}</span>
+                        </p>
+                        <button id="copy-code-btn" class="bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-3 px-6 rounded-xl shadow-button-neon-glow-red transition duration-300 ease-in-out transform hover:scale-105 mb-6 border-b-4 border-red-900 hover:border-red-950 text-base animate-pulse-btn">
+                            Copy Code to Scroll!
+                        </button>
 
-                <p className="text-xl mb-4 font-semibold text-shadow-sm">
-                    The true identity was:
-                </p>
-                <p className="text-4xl font-extrabold text-red-400 mb-8 animate-bounce-slow tracking-wide text-shadow-lg">
-                    {correctCharacter}
-                </p>
+                        <div class="flex justify-around items-center mb-8 bg-gray-900 bg-opacity-70 p-4 rounded-xl border-2 border-gray-800 shadow-inner-neon-red animate-fade-in">
+                            <div class="text-center flex flex-col items-center">
+                                ${getPlayerAvatarHtml(playerName, 'lg')}
+                                <p class="text-lg font-semibold mt-2 text-shadow-sm">You:</p>
+                                <p class="text-2xl text-red-300 font-bold tracking-wide text-shadow-sm">${playerName}</p>
+                            </div>
+                            <div class="text-center flex flex-col items-center">
+                                ${getPlayerAvatarHtml(otherPlayerName, 'lg')}
+                                <p class="text-lg font-semibold mt-2 text-shadow-sm">Your Rival:</p>
+                                <p class="text-2xl text-purple-300 font-bold tracking-wide text-shadow-sm">
+                                    ${otherPlayerName || 'Summoning...'}
+                                </p>
+                            </div>
+                        </div>
 
-                <button
-                    onClick={handleSwitchRoles}
-                    className="w-full bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-4 px-8 rounded-xl shadow-button-neon-glow-purple transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-purple-900 hover:border-purple-950 animate-pulse-btn"
-                >
-                    Begin Next Saga (Switch Roles)
-                </button>
-            </div>
-        </div>
-    );
-};
+                        <p class="text-base text-gray-300 text-shadow-sm">
+                            Prepare your mind! Once your comrade arrives, the ritual of character selection begins.
+                        </p>
+                        <p class="text-sm text-gray-400 mt-2">
+                            (In this simulation, a virtual challenger will appear shortly)
+                        </p>
+                    </div>
+                </div>
+            `);
+            getElement('copy-code-btn').onclick = copyCodeToClipboard;
+        }
 
-// Main App Component
-const App = () => {
-    const [gamePhase, setGamePhase] = useState('home'); // 'home', 'lobby', 'characterSetup', 'game', 'endRound'
-    const [playerName, setPlayerName] = useState('');
-    const [otherPlayerName, setOtherPlayerName] = useState('');
-    const [gameCode, setGameCode] = useState('');
-    const [messages, setMessages] = useState([]);
-    const [thinkerId, setThinkerId] = useState(null); // ID of the player who is the thinker
-    const [guesserId, setGuesserId] = useState(null); // ID of the player who is the guesser
-    const [currentPlayerId, setCurrentPlayerId] = useState(null); // Will be set by Firebase Auth
-    const [correctCharacter, setCorrectCharacter] = useState('');
+        function renderCharacterSetupPage() {
+            setHtml('app-root', `
+                <div class="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
+                    <div class="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
+                    <div class="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
+                        <h2 class="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow">
+                            Choose Your Champion!
+                        </h2>
 
-    // New states for character setup
-    const [playerSeries, setPlayerSeries] = useState('');
-    const [playerCharacter, setPlayerCharacter] = useState('');
-    const [otherPlayerSeries, setOtherPlayerSeries] = useState(''); // Simulated for other player
-    const [otherPlayerCharacter, setOtherPlayerCharacter] = useState(''); // Simulated for other player
+                        <p class="text-base mb-4 text-gray-300 text-shadow-sm">
+                            Select a character from any Anime, Manga, or Novel. Keep it a secret!
+                        </p>
 
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false); // To track auth state
+                        <input id="series-input" type="text" placeholder="Series Name (e.g., Jujutsu Kaisen)" class="w-full p-3 mb-4 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center" />
+                        <input id="character-input" type="text" placeholder="Character Name (e.g., Satoru Gojo)" class="w-full p-3 mb-6 bg-gray-900 bg-opacity-70 border-2 border-red-600 rounded-xl focus:outline-none focus:ring-4 focus:ring-red-400 text-lg placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red text-center" />
 
-    // Firebase Initialization and Auth
-    useEffect(() => {
-        const initFirebase = async () => {
-            try {
-                // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-                const firebaseConfig = {
-                    apiKey: "AIzaSyDG108yI9TJltunEG4GFI0Kyah60QCjk4M",
-                    authDomain: "guessgame-7b132.firebaseapp.com",
-                    projectId: "guessgame-7b132",
-                    storageBucket: "guessgame-7b132.firebasestorage.app",
-                    messagingSenderId: "294083866383",
-                    appId: "1:294083866383:web:ad24d06184ea45595d987a",
-                    measurementId: "G-8EQG8B29ZV"
+                        <button id="submit-character-btn" class="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-4 px-6 rounded-xl shadow-button-neon-glow-red transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-red-900 hover:border-red-950 animate-pulse-btn">
+                            Lock In Your Secret!
+                        </button>
+                    </div>
+                </div>
+            `);
+
+            const seriesInputEl = getElement('series-input');
+            const characterInputEl = getElement('character-input');
+            const submitBtn = getElement('submit-character-btn');
+
+            seriesInputEl.oninput = (e) => playerSeries = e.target.value;
+            characterInputEl.oninput = (e) => playerCharacter = e.target.value;
+            submitBtn.onclick = handleSubmitCharacter;
+
+            if (playerSeries && playerCharacter) { // If already submitted
+                seriesInputEl.value = playerSeries;
+                characterInputEl.value = playerCharacter;
+                seriesInputEl.disabled = true;
+                characterInputEl.disabled = true;
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Awaiting Rival\'s Choice...';
+            }
+        }
+
+        function renderGameChat() {
+            const isThinker = thinkerId === currentPlayerId;
+            const isGuesser = guesserId === currentPlayerId;
+
+            setHtml('app-root', `
+                <div class="relative flex min-h-screen bg-gradient-to-br from-black via-blue-950 to-indigo-950 text-white p-6 overflow-hidden font-sans">
+                    <div class="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-blue"></div>
+
+                    <!-- Sidebar -->
+                    <div class="relative z-10 w-64 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-3xl shadow-neon-purple-md border-3 border-purple-700 mr-6 flex flex-col animate-fade-in-left-sm">
+                        <h3 class="text-3xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-yellow-300 animate-text-glitch-glow text-shadow-sm">
+                            Awesome
+                        </h3>
+                        <div class="flex flex-col space-y-4">
+                            <div class="flex items-center bg-gray-900 bg-opacity-70 p-3 rounded-xl shadow-inner-neon-red border-2 border-gray-800">
+                                ${getPlayerAvatarHtml(playerName, 'sm')}
+                                <div class="ml-3">
+                                    <p class="text-lg font-semibold text-shadow-sm">${playerName}</p>
+                                    <p class="text-xs mt-1 ${isThinker ? 'text-red-400 font-bold' : 'text-purple-400 font-bold'}">
+                                        ${isThinker ? 'Thinker (You)' : 'Guesser (You)'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center bg-gray-900 bg-opacity-70 p-3 rounded-xl shadow-inner-neon-purple border-2 border-gray-800">
+                                ${getPlayerAvatarHtml(otherPlayerName, 'sm')}
+                                <div class="ml-3">
+                                    <p class="text-lg font-semibold text-shadow-sm">${otherPlayerName}</p>
+                                    <p class="text-xs mt-1 ${!isThinker ? 'text-red-400 font-bold' : 'text-purple-400 font-bold'}">
+                                        ${!isThinker ? 'Thinker (Rival)' : 'Guesser (Rival)'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Chat Area -->
+                    <div class="relative z-10 flex-grow bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-8 rounded-3xl shadow-neon-red-md border-3 border-red-700 flex flex-col animate-fade-in-right-sm">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-orange-300 to-yellow-300 animate-text-glitch-glow">
+                                The Grand Interrogation
+                            </h2>
+                            ${isGuesser ? `
+                                <button id="get-hint-btn" class="bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-2 px-4 rounded-lg shadow-button-neon-glow-purple transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-purple-900 hover:border-purple-950 text-sm ${isGeneratingHint || messageCount < 4 ? 'opacity-50 cursor-not-allowed' : ''}" ${isGeneratingHint || messageCount < 4 ? 'disabled' : ''}>
+                                    ${isGeneratingHint ? 'Summoning...' : `Hint (${messageCount}/4)`}
+                                </button>
+                            ` : ''}
+                        </div>
+
+                        <div id="messages-container" class="flex-grow bg-gray-900 bg-opacity-70 p-5 rounded-2xl mb-6 overflow-y-auto custom-scrollbar border-2 border-gray-800 shadow-inner-neon-red animate-fade-in" style="max-height: calc(100vh - 220px);">
+                            ${messages.length === 0 ? `
+                                <p class="text-center text-gray-500 mt-4 text-base text-shadow-sm">
+                                    The stage is set! ${isThinker ? `You're thinking of a character from ${playerSeries}.` : `It's your turn to unravel the mystery of ${otherPlayerSeries}'s character! Ask away!`}
+                                </p>
+                            ` : ''}
+                            ${messages.map(msg => `
+                                <div class="mb-3 flex items-start ${msg.isMine ? 'justify-end' : 'justify-start'} animate-message-pop-in">
+                                    ${!msg.isMine ? getPlayerAvatarHtml(msg.sender, 'sm') : ''}
+                                    <div class="p-3 rounded-lg max-w-[75%] shadow-message transition-all duration-300 ${msg.isMine ? 'bg-red-700 text-white ml-3 border-2 border-red-500' : 'bg-gray-700 text-gray-100 mr-3 border-2 border-gray-600'} ${msg.role === 'AI' ? 'bg-purple-800 border-2 border-purple-600 shadow-neon-purple' : ''}">
+                                        <p class="font-bold text-xs mb-1 opacity-80 text-red-200">
+                                            ${msg.sender} (${msg.role})
+                                        </p>
+                                        <p class="text-sm leading-relaxed">${msg.text}</p>
+                                    </div>
+                                    ${msg.isMine ? getPlayerAvatarHtml(msg.sender, 'sm') : ''}
+                                </div>
+                            `).join('')}
+                            <div id="chat-end-ref"></div>
+                        </div>
+
+                        <div id="feedback-message-container">
+                            ${feedbackMessage ? `
+                                <div class="text-center py-3 rounded-xl mb-6 text-lg font-semibold animate-fade-in ${feedbackMessage.includes('Victory') ? 'bg-green-700 shadow-neon-green-md' : 'bg-red-700 shadow-neon-red-md'}">
+                                    ${feedbackMessage}
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="flex mt-auto gap-3">
+                            <input id="message-input" type="text" placeholder="${isGuesser ? "Unleash your question..." : "Craft your witty response..."}" class="flex-grow p-3 bg-gray-900 bg-opacity-70 border-2 border-gray-800 rounded-lg focus:outline-none focus:ring-4 focus:ring-red-400 text-base placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-red" ${!isGuesser && !isThinker ? 'disabled' : ''} />
+                            <button id="send-message-btn" class="bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-3 px-6 rounded-lg shadow-button-neon-glow-red transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-red-900 hover:border-red-950 text-base" ${!isGuesser && !isThinker ? 'disabled' : ''}>
+                                Send It!
+                            </button>
+                        </div>
+
+                        ${isGuesser ? `
+                            <div class="mt-6 text-center flex flex-col md:flex-row gap-3">
+                                <button id="make-guess-toggle-btn" class="flex-grow bg-gradient-to-r from-yellow-600 to-orange-700 hover:from-yellow-700 hover:to-orange-800 text-white font-bold py-4 px-8 rounded-lg shadow-button-neon-glow-yellow transform transition-all duration-300 hover:scale-105 border-b-4 border-yellow-800 hover:border-yellow-900 animate-pulse-btn">
+                                    Make Your Grand Guess!
+                                </button>
+                                <div id="guess-input-section" class="flex flex-grow gap-3 hidden">
+                                    <input id="guess-input" type="text" placeholder="Your Masterful Guess (Series & Character)" class="flex-grow p-3 bg-gray-900 bg-opacity-70 border-2 border-gray-800 rounded-lg focus:outline-none focus:ring-4 focus:ring-yellow-400 text-base placeholder-gray-500 transition duration-300 ease-in-out shadow-inner-neon-yellow" />
+                                    <button id="confirm-guess-btn" class="bg-gradient-to-r from-green-600 to-teal-700 hover:from-green-700 hover:to-teal-800 text-white font-bold py-3 px-6 rounded-lg shadow-button-neon-glow-green transition duration-300 ease-in-out transform hover:scale-105 border-b-4 border-green-800 hover:border-green-900 text-base">
+                                        Confirm Destiny!
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `);
+
+            // Attach event listeners
+            const messageInputEl = getElement('message-input');
+            const sendBtn = getElement('send-message-btn');
+            const messagesContainer = getElement('messages-container');
+            const chatEndRef = getElement('chat-end-ref');
+
+            messageInputEl.oninput = (e) => currentMessage = e.target.value;
+            sendBtn.onclick = handleSendMessage;
+            messageInputEl.onkeypress = (e) => { if (e.key === 'Enter') handleSendMessage(); };
+
+            if (isGuesser) {
+                const hintBtn = getElement('get-hint-btn');
+                const makeGuessToggleBtn = getElement('make-guess-toggle-btn');
+                const guessInputSection = getElement('guess-input-section');
+                const guessInputEl = getElement('guess-input');
+                const confirmGuessBtn = getElement('confirm-guess-btn');
+
+                if (hintBtn) hintBtn.onclick = handleGetHint;
+                if (makeGuessToggleBtn) makeGuessToggleBtn.onclick = () => {
+                    hideElement('make-guess-toggle-btn');
+                    showElement('guess-input-section');
                 };
+                if (guessInputEl) guessInputEl.oninput = (e) => guessInput = e.target.value;
+                if (confirmGuessBtn) confirmGuessBtn.onclick = handleMakeGuess;
+                if (guessInputEl) guessInputEl.onkeypress = (e) => { if (e.key === 'Enter') handleMakeGuess(); };
+            }
 
+            // Scroll to bottom
+            if (chatEndRef) chatEndRef.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function renderEndOfRoundScreen() {
+            setHtml('app-root', `
+                <div class="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-black via-gray-950 to-red-950 text-white p-4 overflow-hidden font-sans">
+                    <div class="absolute inset-0 z-0 opacity-15 animate-bg-grid-glow-red"></div>
+                    <div class="relative z-10 bg-gray-900 bg-opacity-80 backdrop-filter backdrop-blur-lg p-6 rounded-2xl shadow-neon-red-sm w-full max-w-md text-center transform transition-all duration-700 hover:scale-105 border-3 border-red-700 animate-fade-in-up-sm">
+                        <h2 class="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-300 to-yellow-400 animate-text-glitch-glow leading-tight">
+                            Round Concluded!
+                        </h2>
+
+                        <p class="text-xl mb-4 font-semibold text-shadow-sm">
+                            The true identity was:
+                        </p>
+                        <p class="text-4xl font-extrabold text-red-400 mb-8 animate-bounce-slow tracking-wide text-shadow-lg">
+                            ${correctCharacter}
+                        </p>
+
+                        <button id="switch-roles-btn" class="w-full bg-gradient-to-r from-purple-700 to-fuchsia-800 hover:from-purple-800 hover:to-fuchsia-900 text-white font-bold py-4 px-8 rounded-xl shadow-button-neon-glow-purple transform transition-all duration-300 hover:scale-105 text-xl border-b-4 border-purple-900 hover:border-purple-950 animate-pulse-btn">
+                            Begin Next Saga (Switch Roles)
+                        </button>
+                    </div>
+                </div>
+            `);
+            getElement('switch-roles-btn').onclick = switchRoles;
+        }
+
+        // --- Game State Management & Render Loop ---
+        function updateUI() {
+            switch (gamePhase) {
+                case 'home':
+                    renderHomePage();
+                    break;
+                case 'lobby':
+                    renderGameLobby();
+                    break;
+                case 'characterSetup':
+                    renderCharacterSetupPage();
+                    break;
+                case 'game':
+                    renderGameChat();
+                    break;
+                case 'endRound':
+                    renderEndOfRoundScreen();
+                    break;
+                default:
+                    renderHomePage();
+            }
+        }
+
+        // --- Firebase Integration ---
+        async function initFirebase() {
+            try {
                 const app = initializeApp(firebaseConfig);
-                const firestoreDb = getFirestore(app);
-                const firebaseAuth = getAuth(app);
-
-                setDb(firestoreDb);
-                setAuth(firebaseAuth);
+                db = getFirestore(app);
+                auth = getAuth(app);
 
                 // Sign in anonymously for now, or use custom token if available in Canvas env
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(firebaseAuth, __initial_auth_token);
+                if (typeof __initial_auth_token !== 'undefined') { // This variable is provided by Canvas environment
+                    await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    await signInAnonymously(firebaseAuth);
+                    await signInAnonymously(auth);
                 }
 
-                // Listen for auth state changes
-                const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+                onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        setCurrentPlayerId(user.uid);
+                        currentPlayerId = user.uid;
                     } else {
-                        setCurrentPlayerId(null);
+                        currentPlayerId = null;
                     }
-                    setIsAuthReady(true); // Auth state is now known
+                    isAuthReady = true;
+                    updateUI(); // Initial UI render after auth is ready
                 });
-
-                return () => unsubscribe(); // Cleanup auth listener on unmount
 
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
-                // Optionally, show an error message to the user
+                showMessageBox("Failed to initialize game. Please check your internet connection and try again.", "error");
             }
-        };
-
-        initFirebase();
-    }, []); // Run once on component mount
-
-
-    // Create Game in Firestore
-    const createGame = async () => {
-        if (!db || !currentPlayerId || !playerName) return;
-        const newGameCode = generateGameCode();
-        setGameCode(newGameCode);
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, newGameCode);
-        try {
-            await setDoc(gameRoomRef, {
-                players: {
-                    [currentPlayerId]: { name: playerName, status: 'connected', character: null, series: null, role: null }
-                },
-                messages: [],
-                status: 'waiting',
-                createdAt: new Date(),
-                thinkerId: null, // Initial roles are null until characters are set
-                guesserId: null,
-            });
-            setGamePhase('lobby');
-        } catch (error) {
-            console.error("Error creating game:", error);
-            // Handle error (e.g., show message)
         }
-    };
 
-    // Join Game in Firestore
-    const joinGame = async (code) => {
-        if (!db || !currentPlayerId || !playerName) return;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, code);
+        // Create Game in Firestore
+        async function createGame() {
+            if (!db || !currentPlayerId || !playerName) {
+                showMessageBox("Firebase not ready or player name missing!", "error");
+                return;
+            }
+            const newGameCode = generateGameCode();
+            gameCode = newGameCode; // Update global state
 
-        try {
-            const docSnap = await getDoc(gameRoomRef);
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const players = data.players || {};
-                if (Object.keys(players).length >= 2) {
-                    alert("Game room is full!"); // Use custom modal in real app
-                    return;
-                }
-                await updateDoc(gameRoomRef, {
-                    [`players.${currentPlayerId}`]: { name: playerName, status: 'connected', character: null, series: null, role: null }
+            const appId = getAppId();
+            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, newGameCode);
+            try {
+                await setDoc(gameRoomRef, {
+                    players: {
+                        [currentPlayerId]: { name: playerName, status: 'connected', character: null, series: null, role: null }
+                    },
+                    messages: [],
+                    status: 'waiting',
+                    createdAt: new Date(),
+                    thinkerId: null,
+                    guesserId: null,
                 });
-                setGameCode(code);
-                setGamePhase('lobby');
-            } else {
-                alert("Game room does not exist!"); // Use custom modal in real app
+                gamePhase = 'lobby';
+                updateUI();
+                setupGameRoomListener(); // Start listening for changes in the lobby
+            } catch (error) {
+                console.error("Error creating game:", error);
+                showMessageBox("Failed to create game. Please try again.", "error");
             }
-        } catch (error) {
-            console.error("Error joining game:", error);
-            // Handle error
         }
-    };
 
-    // Simulate role switching (will be handled by Firestore updates in real app)
-    const switchRoles = async () => {
-        if (!db || !gameCode || !thinkerId || !guesserId) return;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
+        // Join Game in Firestore
+        async function joinGame(code) {
+            if (!db || !currentPlayerId || !playerName) {
+                showMessageBox("Firebase not ready or player name missing!", "error");
+                return;
+            }
+            gameCode = code; // Update global state
 
-        // Clear messages for new round
-        setMessages([]);
-        setCorrectCharacter('');
+            const appId = getAppId();
+            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, code);
 
-        // Swap roles in Firestore
-        await updateDoc(gameRoomRef, {
-            thinkerId: guesserId,
-            guesserId: thinkerId,
-            status: 'characterSetup' // Go back to character setup to re-select characters
-        });
-        // The onSnapshot listeners in CharacterSetupPage and GameLobby will handle phase change
-    };
+            try {
+                const docSnap = await getDoc(gameRoomRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const players = data.players || {};
+                    if (Object.keys(players).length >= 2) {
+                        showMessageBox("Game room is full! Find another one or create your own.", "error");
+                        return;
+                    }
+                    await updateDoc(gameRoomRef, {
+                        [`players.${currentPlayerId}`]: { name: playerName, status: 'connected', character: null, series: null, role: null }
+                    });
+                    gamePhase = 'lobby';
+                    updateUI();
+                    setupGameRoomListener(); // Start listening for changes in the lobby
+                } else {
+                    showMessageBox("Game room does not exist! Check the code or create a new game.", "error");
+                }
+            } catch (error) {
+                console.error("Error joining game:", error);
+                showMessageBox("Error joining game. Please try again.", "error");
+            }
+        }
 
+        // Listener for game room state changes (used in Lobby and Character Setup)
+        let unsubscribeGameRoom = null;
+        function setupGameRoomListener() {
+            if (unsubscribeGameRoom) unsubscribeGameRoom(); // Unsubscribe from previous listener if any
 
-    const gameContextValue = {
-        gamePhase, setGamePhase,
-        playerName, setPlayerName,
-        otherPlayerName, setOtherPlayerName,
-        gameCode, setGameCode,
-        messages, setMessages,
-        thinkerId, setThinkerId,
-        guesserId, setGuesserId,
-        currentPlayerId, setCurrentPlayerId, // Pass setter for userId if needed elsewhere
-        correctCharacter, setCorrectCharacter,
-        playerSeries, setPlayerSeries,
-        playerCharacter, setPlayerCharacter,
-        otherPlayerSeries, setOtherPlayerSeries,
-        otherPlayerCharacter, setOtherPlayerCharacter,
-        db, auth, userId: currentPlayerId, isAuthReady, // Pass currentPlayerId as userId
-        createGame,
-        joinGame,
-        switchRoles
-    };
+            const appId = getAppId();
+            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
 
-    return (
-        <GameContext.Provider value={gameContextValue}>
-            {isAuthReady && currentPlayerId ? ( // Render only when Firebase auth is ready
-                <div className="font-inter">
-                    {gamePhase === 'home' && <HomePage />}
-                    {gamePhase === 'lobby' && <GameLobby />}
-                    {gamePhase === 'characterSetup' && <CharacterSetupPage />}
-                    {gamePhase === 'game' && <GameChat />}
-                    {gamePhase === 'endRound' && <EndOfRoundScreen />}
-                </div>
-            ) : (
-                <div className="flex items-center justify-center min-h-screen bg-black text-white text-2xl animate-pulse">
-                    Initializing Quantum Game Engine...
-                </div>
-            )}
-        </GameContext.Provider>
-    );
-};
+            unsubscribeGameRoom = onSnapshot(gameRoomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const players = data.players || {};
+                    const playerIds = Object.keys(players);
 
-// Tailwind CSS setup and custom animations
-const style = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap'); /* For a futuristic/techy feel */
+                    const otherPlayerId = playerIds.find(id => id !== currentPlayerId);
+                    if (otherPlayerId && players[otherPlayerId]) {
+                        otherPlayerName = players[otherPlayerId].name;
+                        otherPlayerSeries = players[otherPlayerId].series || '';
+                        otherPlayerCharacter = players[otherPlayerId].character || '';
+                    } else {
+                        otherPlayerName = ''; // Clear if other player disconnects
+                        otherPlayerSeries = '';
+                        otherPlayerCharacter = '';
+                    }
 
-body {
-    margin: 0;
-    font-family: 'Inter', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
+                    // Update roles from Firestore
+                    thinkerId = data.thinkerId;
+                    guesserId = data.guesserId;
 
-h1, h2, h3 {
-    font-family: 'Orbitron', sans-serif; /* Apply Orbitron to titles */
-}
+                    // Logic for phase transitions
+                    if (playerIds.length === 2 && data.status === 'waiting') {
+                        gamePhase = 'characterSetup';
+                    } else if (playerIds.length === 2 && players[playerIds[0]].character && players[playerIds[0]].series &&
+                               players[playerIds[1]].character && players[playerIds[1]].series && data.status !== 'roundEnded') {
+                        gamePhase = 'game';
+                    } else if (data.status === 'roundEnded') {
+                        gamePhase = 'endRound';
+                        correctCharacter = data.lastCorrectGuess ? `${data.lastCorrectGuess.character} (${data.lastCorrectGuess.series})` : '';
+                    }
 
-/* Custom Scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-    width: 8px; /* Smaller scrollbar */
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-    background: #0a0a0a;
-    border-radius: 8px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #dc2626;
-    border-radius: 8px;
-    border: 2px solid #b91c1c;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #ef4444;
-}
+                    updateUI();
+                } else {
+                    // Game room deleted or does not exist
+                    console.warn("Game room no longer exists. Returning to home.");
+                    gamePhase = 'home';
+                    gameCode = '';
+                    otherPlayerName = '';
+                    playerSeries = '';
+                    playerCharacter = '';
+                    thinkerId = null;
+                    guesserId = null;
+                    unsubscribeGameRoom = null; // Clear listener
+                    updateUI();
+                    showMessageBox("The game room was closed or no longer exists.", "info");
+                }
+            }, (error) => {
+                console.error("Error listening to game room:", error);
+                showMessageBox("Lost connection to game. Please try refreshing.", "error");
+            });
+        }
 
-/* Background Grid Glow Animation (Red/Dark theme) */
-@keyframes bg-grid-glow-red {
-    0% { background-position: 0% 0%; filter: hue-rotate(0deg); }
-    100% { background-position: 200% 200%; filter: hue-rotate(360deg); }
-}
-.animate-bg-grid-glow-red {
-    background-image: linear-gradient(rgba(220, 38, 38, 0.05) 1px, transparent 1px), /* Red grid lines, lighter opacity */
-                      linear-gradient(90deg, rgba(220, 38, 38, 0.05) 1px, transparent 1px);
-    background-size: 40px 40px; /* Even smaller grid */
-    animation: bg-grid-glow-red 100s linear infinite;
-}
+        // Handle Character Submission
+        async function handleSubmitCharacter() {
+            if (!db || !currentPlayerId || !gameCode || !playerSeries.trim() || !playerCharacter.trim()) {
+                showMessageBox('Please enter both series and character names.', 'error');
+                return;
+            }
 
-/* Background Grid Glow Animation (Blue/Dark theme) */
-@keyframes bg-grid-glow-blue {
-    0% { background-position: 0% 0%; filter: hue-rotate(0deg); }
-    100% { background-position: 200% 200%; filter: hue-rotate(360deg); }
-}
-.animate-bg-grid-glow-blue {
-    background-image: linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px), /* Blue grid lines, lighter opacity */
-                      linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
-    background-size: 40px 40px; /* Even smaller grid */
-    animation: bg-grid-glow-blue 100s linear infinite;
-}
+            const appId = getAppId();
+            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
 
+            try {
+                await updateDoc(gameRoomRef, {
+                    [`players.${currentPlayerId}.series`]: playerSeries.trim(),
+                    [`players.${currentPlayerId}.character`]: playerCharacter.trim(),
+                });
+                // UI will update via onSnapshot listener in setupGameRoomListener
+                showMessageBox('Your secret is safe! Waiting for your opponent to choose their fate...', 'info');
+            } catch (error) {
+                console.error("Error submitting character:", error);
+                showMessageBox("Failed to lock in character. Try again.", "error");
+            }
+        }
 
-/* Text Neon Glitch Glow */
-@keyframes text-glitch-glow {
-    0%, 100% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(0,0); opacity: 1; }
-    10% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-2px, 2px); opacity: 0.9; }
-    20% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(2px, -2px); opacity: 1; }
-    30% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #00ffff, 0 0 28px #00ffff, 0 0 36px #00ffff; transform: translate(-1px, 1px); opacity: 0.9; }
-    40% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(1px, -1px); opacity: 1; }
-    50% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-3px, 3px); opacity: 0.8; }
-    60% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(3px, -3px); opacity: 1; }
-    70% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #00ffff, 0 0 28px #00ffff, 0 0 36px #00ffff; transform: translate(-2px, 2px); opacity: 0.9; }
-    80% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #f00, 0 0 28px #f00, 0 0 36px #f00; transform: translate(2px, -2px); opacity: 1; }
-    90% { text-shadow: 0 0 6px #fff, 0 0 12px #fff, 0 0 20px #ff00ff, 0 0 28px #ff00ff, 0 0 36px #ff00ff; transform: translate(-1px, 1px); opacity: 0.9; }
-}
-.animate-text-glitch-glow {
-    animation: text-glitch-glow 4s infinite alternate;
-}
+        // Handle Send Message
+        async function handleSendMessage() {
+            const messageInputEl = getElement('message-input');
+            const messageText = messageInputEl ? messageInputEl.value.trim() : '';
 
-/* Button Neon Glow (Red) */
-@keyframes button-neon-glow-red {
-    0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.7), 0 0 20px rgba(220, 38, 38, 0.5), 0 0 30px rgba(220, 38, 38, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(220, 38, 38, 0.9), 0 0 30px rgba(220, 38, 38, 0.7), 0 0 45px rgba(220, 38, 38, 0.5); }
-}
-.shadow-button-neon-glow-red {
-    animation: button-neon-glow-red 2.5s infinite alternate;
-}
+            if (messageText && db && currentPlayerId && gameCode) {
+                const appId = getAppId();
+                const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
 
-/* Button Neon Glow (Purple) */
-@keyframes button-neon-glow-purple {
-    0%, 100% { box-shadow: 0 0 10px rgba(168, 85, 247, 0.7), 0 0 20px rgba(168, 85, 247, 0.5), 0 0 30px rgba(168, 85, 247, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(168, 85, 247, 0.9), 0 0 30px rgba(168, 85, 247, 0.7), 0 0 45px rgba(168, 85, 247, 0.5); }
-}
-.shadow-button-neon-glow-purple {
-    animation: button-neon-glow-purple 2.5s infinite alternate;
-}
+                try {
+                    await addDoc(messagesRef, {
+                        senderId: currentPlayerId,
+                        senderName: playerName,
+                        text: messageText,
+                        timestamp: new Date(),
+                        role: thinkerId === currentPlayerId ? 'Thinker' : 'Guesser'
+                    });
+                    if (messageInputEl) messageInputEl.value = ''; // Clear input
+                } catch (error) {
+                    console.error("Error sending message:", error);
+                    showMessageBox("Failed to send message. Check connection.", "error");
+                }
+            }
+        }
 
-/* Button Neon Glow (Blue) */
-@keyframes button-neon-glow-blue {
-    0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.7), 0 0 20px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(59, 130, 246, 0.9), 0 0 30px rgba(59, 130, 246, 0.7), 0 0 45px rgba(59, 130, 246, 0.5); }
-}
-.shadow-button-neon-glow-blue {
-    animation: button-neon-glow-blue 2.5s infinite alternate;
-}
+        // Handle Make Guess
+        async function handleMakeGuess() {
+            const guessInputEl = getElement('guess-input');
+            const guessText = guessInputEl ? guessInputEl.value.trim() : '';
 
-/* Button Neon Glow (Yellow) */
-@keyframes button-neon-glow-yellow {
-    0%, 100% { box-shadow: 0 0 10px rgba(252, 211, 77, 0.7), 0 0 20px rgba(252, 211, 77, 0.5), 0 0 30px rgba(252, 211, 77, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(252, 211, 77, 0.9), 0 0 30px rgba(252, 211, 77, 0.7), 0 0 45px rgba(252, 211, 77, 0.5); }
-}
-.shadow-button-neon-glow-yellow {
-    animation: button-neon-glow-yellow 2.5s infinite alternate;
-}
+            if (guessText && db && currentPlayerId && gameCode) {
+                const appId = getAppId();
+                const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
+                const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
 
-/* Button Neon Glow (Green) */
-@keyframes button-neon-glow-green {
-    0%, 100% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.7), 0 0 20px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(34, 197, 94, 0.9), 0 0 30px rgba(34, 197, 94, 0.7), 0 0 45px rgba(34, 197, 94, 0.5); }
-}
-.shadow-button-neon-glow-green {
-    animation: button-neon-glow-green 2.5s infinite alternate;
-}
+                const actualCorrectCharacter = guesserId === currentPlayerId ? otherPlayerCharacter : playerCharacter;
+                const actualCorrectSeries = guesserId === currentPlayerId ? otherPlayerSeries : playerSeries;
 
+                if (guessText.toLowerCase() === actualCorrectCharacter.toLowerCase()) {
+                    feedbackMessage = `Victory! The character was indeed ${actualCorrectCharacter} from ${actualCorrectSeries}! You are a true master! (Or just lucky. Mostly lucky.)`;
+                    // Record the correct guess in Firestore
+                    await addDoc(messagesRef, {
+                        senderId: currentPlayerId,
+                        senderName: playerName,
+                        text: `I guess: ${guessText} - CORRECT!`,
+                        timestamp: new Date(),
+                        role: 'Guesser'
+                    });
+                    // Update game state in Firestore for round end and role switch
+                    await updateDoc(gameRoomRef, {
+                        lastCorrectGuess: { character: actualCorrectCharacter, series: actualCorrectSeries, guesserId: currentPlayerId },
+                        status: 'roundEnded',
+                        thinkerId: guesserId, // Swap roles for next round
+                        guesserId: thinkerId,
+                    });
+                } else {
+                    feedbackMessage = 'A valiant effort, but alas, your guess was as off as a villain\'s redemption arc! Try again! (And maybe read more books. Seriously.)';
+                    // Record the wrong guess in Firestore
+                    await addDoc(messagesRef, {
+                        senderId: currentPlayerId,
+                        senderName: playerName,
+                        text: `I guess: ${guessText} - WRONG!`,
+                        timestamp: new Date(),
+                        role: 'Guesser'
+                    });
+                }
+                updateUI(); // Re-render to show feedback
+                setTimeout(() => feedbackMessage = '', 2000); // Clear feedback
+                if (guessInputEl) guessInputEl.value = '';
+                // The phase change to 'endRound' will be handled by the game room listener
+            }
+        }
 
-/* Smaller Pulse Button */
-@keyframes pulse-btn {
-    0% { transform: scale(1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 0 rgba(0,0,0,0); }
-    50% { transform: scale(1.02); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 10px rgba(255,255,255,0.3); }
-    100% { transform: scale(1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 0 rgba(0,0,0,0); }
-}
-.animate-pulse-btn {
-    animation: pulse-btn 2.5s infinite ease-in-out;
-}
+        // Handle Get Hint (AI)
+        async function handleGetHint() {
+            if (messageCount < 4) {
+                showMessageBox(`The Oracle is busy contemplating its superiority. You need ${4 - messageCount} more questions/guesses before it deigns to help.`, 'error');
+                return;
+            }
 
-/* Fade In Up (Small) */
-@keyframes fade-in-up-sm {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up-sm {
-    animation: fade-in-up-sm 0.9s ease-out forwards;
-}
+            isGeneratingHint = true;
+            showMessageBox('Summoning the Oracle of Sarcasm for a hint... this might hurt your ego.', 'info');
+            updateUI(); // Update button state
 
-/* Fade In Left (Small) */
-@keyframes fade-in-left-sm {
-    from { opacity: 0; transform: translateX(-50px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-.animate-fade-in-left-sm {
-    animation: fade-in-left-sm 0.9s ease-out forwards;
-}
+            const targetCharacter = guesserId === currentPlayerId ? otherPlayerCharacter : playerCharacter;
+            const targetSeries = guesserId === currentPlayerId ? otherPlayerSeries : playerSeries;
 
-/* Fade In Right (Small) */
-@keyframes fade-in-right-sm {
-    from { opacity: 0; transform: translateX(50px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-.animate-fade-in-right-sm {
-    animation: fade-in-right-sm 0.9s ease-out forwards;
-}
+            const chatHistoryForLLM = messages.map(msg => ({
+                role: msg.isMine ? "user" : "model",
+                parts: [{ text: msg.text }]
+            }));
 
-/* Pop In with Bounce */
-@keyframes pop-in-bounce {
-    0% { transform: scale(0.7); opacity: 0; }
-    50% { transform: scale(1.1); opacity: 1; }
-    75% { transform: scale(0.95); }
-    100% { transform: scale(1); }
-}
-.animate-pop-in-bounce {
-    animation: pop-in-bounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
+            const prompt = `You are a highly sarcastic, witty, and slightly unhinged AI assistant. The user is playing a guessing game about characters from Anime, Manga, or Novels. They need a *subtle, funny, or sarcastic hint* for the character "${targetCharacter}" from the series "${targetSeries}". Do NOT directly reveal the character's name or series. Make it sound like you're reluctantly helping, or even mocking their lack of insight. Consider the following conversation history to avoid redundant hints, but feel free to twist previous answers. Keep it concise, entertaining, and perhaps a little condescending. Examples: "They're known for their peculiar fashion sense, or lack thereof, depending on your taste for capes.", "If they had a catchphrase, it would probably involve shouting. A lot.", "Their life story is a masterclass in 'things going wrong, but in a dramatic way.'", "They probably spend too much time thinking about friendship, or revenge. One of those.", "Their power level is over 9000... or maybe just enough to trip over their own feet."`;
 
-/* Message Pop In */
-@keyframes message-pop-in {
-    from { opacity: 0; transform: translateY(10px) scale(0.95); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.animate-message-pop-in {
-    animation: message-pop-in 0.3s ease-out forwards;
-}
+            try {
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
 
-/* Avatar Float */
-@keyframes avatar-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-}
-.animate-avatar-float {
-    animation: avatar-float 2.5s infinite ease-in-out;
-}
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const hintText = result.candidates[0].content.parts[0].text;
+                    const appId = getAppId();
+                    const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
+                    await addDoc(messagesRef, {
+                        senderId: 'AI_ASSISTANT',
+                        senderName: 'Sarcastic AI',
+                        text: `AI Oracle: ${hintText}`,
+                        timestamp: new Date(),
+                        role: 'AI'
+                    });
+                    hideMessageBox(); // Clear "Summoning..." message
+                } else {
+                    showMessageBox('The AI is currently contemplating the meaning of existence. Or perhaps it just thinks your questions are beneath it. Try again later.', 'error');
+                }
+            } catch (error) {
+                console.error('Error fetching hint:', error);
+                showMessageBox('My circuits are buzzing with existential dread. Cannot provide hint right now. Also, your internet might be broken. Just saying.', 'error');
+            } finally {
+                isGeneratingHint = false;
+                messageCount = 0; // Reset hint cooldown
+                updateUI(); // Re-render to update button state
+            }
+        }
 
-/* Text Pulse */
-@keyframes pulse-text {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.01); opacity: 0.95; }
-}
-.animate-pulse-text {
-    animation: pulse-text 1.8s infinite ease-in-out;
-}
+        // Switch Roles for new round
+        async function switchRoles() {
+            if (!db || !gameCode || !thinkerId || !guesserId) return;
+            const appId = getAppId();
+            const gameRoomRef = doc(db, `artifacts/${appId}/public/data/gameRooms`, gameCode);
 
-/* Custom Shadows (Smaller versions) */
-.shadow-neon-red-sm {
-    box-shadow: 0 0 15px rgba(220, 38, 38, 0.6), 0 0 30px rgba(220, 38, 38, 0.4);
-}
-.shadow-neon-purple-sm {
-    box-shadow: 0 0 15px rgba(168, 85, 247, 0.6), 0 0 30px rgba(168, 85, 247, 0.4);
-}
-.shadow-neon-blue-sm {
-    box-shadow: 0 0 15px rgba(59, 130, 246, 0.6), 0 0 30px rgba(59, 130, 246, 0.4);
-}
-.shadow-neon-green-sm {
-    box-shadow: 0 0 15px rgba(34, 197, 94, 0.6), 0 0 30px rgba(34, 197, 94, 0.4);
-}
-.shadow-inner-neon-red {
-    box-shadow: inset 0 0 10px rgba(220, 38, 38, 0.25), inset 0 0 15px rgba(220, 38, 38, 0.1);
-}
-.shadow-inner-neon-purple {
-    box-shadow: inset 0 0 10px rgba(168, 85, 247, 0.25), inset 0 0 15px rgba(168, 85, 247, 0.1);
-}
-.shadow-inner-neon-yellow {
-    box-shadow: inset 0 0 10px rgba(252, 211, 77, 0.25), inset 0 0 15px rgba(252, 211, 77, 0.1);
-}
-.shadow-avatar-neon-glow {
-    box-shadow: 0 0 8px rgba(220, 38, 38, 0.4), 0 0 15px rgba(168, 85, 247, 0.2);
-}
-.shadow-message {
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.15), 0 0 3px rgba(255,255,255,0.08);
-}
-.text-shadow-lg {
-    text-shadow: 0 0 6px rgba(255,255,255,0.5), 0 0 10px rgba(255,255,255,0.3);
-}
-.text-shadow-sm {
-    text-shadow: 0 0 4px rgba(255,255,255,0.3);
-}
-`;
+            // Clear messages for new round
+            messages = [];
+            correctCharacter = '';
+            messageCount = 0; // Reset hint cooldown
 
-export default function AppWrapper() {
-    return (
-        <>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style dangerouslySetInnerHTML={{ __html: style }} />
-            <App />
-        </>
-    );
-}
+            // Swap roles in Firestore and reset character choices
+            await updateDoc(gameRoomRef, {
+                thinkerId: guesserId,
+                guesserId: thinkerId,
+                status: 'characterSetup', // Go back to character setup to re-select characters
+                // Clear player characters in Firestore for the new round
+                [`players.${thinkerId}.character`]: null,
+                [`players.${thinkerId}.series`]: null,
+                [`players.${guesserId}.character`]: null,
+                [`players.${guesserId}.series`]: null,
+            });
+            // The onSnapshot listeners will handle the phase change and UI update
+        }
+
+        // --- Initial Load ---
+        window.onload = initFirebase; // Start Firebase initialization when the page loads
+    </script>
+</body>
+</html>
