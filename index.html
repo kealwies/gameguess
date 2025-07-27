@@ -268,6 +268,7 @@
         let isAuthReady = false;
         let messageCount = 0; // For hint cooldown
         let isGeneratingHint = false; // To prevent multiple hint requests
+        let feedbackMessage = ''; // Global feedback message state
 
         // Firebase Configuration (Your provided keys)
         const firebaseConfig = {
@@ -336,6 +337,23 @@
                     ${initials}
                 </div>
             `;
+        }
+
+        // --- Clipboard Copy Function ---
+        function copyCodeToClipboard() {
+            const el = document.createElement('textarea');
+            el.value = gameCode;
+            document.body.appendChild(el);
+            el.select();
+            try {
+                document.execCommand('copy');
+                showMessageBox('Game code copied to clipboard! Share it with your comrade!', 'info');
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+                showMessageBox('Clipboard magic failed! Copy manually: ' + gameCode, 'error');
+            } finally {
+                document.body.removeChild(el);
+            }
         }
 
         // --- Render Functions for Pages ---
@@ -658,6 +676,7 @@
 
         // --- Firebase Integration ---
         let unsubscribeGameRoom = null; // Declare here to be accessible globally
+        let unsubscribeMessages = null; // Declare for messages listener
 
         async function initFirebase() {
             try {
@@ -665,12 +684,8 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Sign in anonymously for now, or use custom token if available in Canvas env
-                if (typeof __initial_auth_token !== 'undefined') { // This variable is provided by Canvas environment
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // Always sign in anonymously for standalone HTML to avoid __initial_auth_token issues
+                await signInAnonymously(auth);
 
                 // Listen for auth state changes
                 onAuthStateChanged(auth, (user) => {
@@ -789,6 +804,7 @@
                     } else if (playerIds.length === 2 && players[playerIds[0]].character && players[playerIds[0]].series &&
                                players[playerIds[1]].character && players[playerIds[1]].series && data.status !== 'roundEnded') {
                         gamePhase = 'game';
+                        setupMessagesListener(); // Start listening for messages only when game starts
                     } else if (data.status === 'roundEnded') {
                         gamePhase = 'endRound';
                         correctCharacter = data.lastCorrectGuess ? `${data.lastCorrectGuess.character} (${data.lastCorrectGuess.series})` : '';
@@ -807,6 +823,8 @@
                     guesserId = null;
                     if (unsubscribeGameRoom) unsubscribeGameRoom(); // Clear listener
                     unsubscribeGameRoom = null;
+                    if (unsubscribeMessages) unsubscribeMessages(); // Clear messages listener
+                    unsubscribeMessages = null;
                     updateUI();
                     showMessageBox("The game room was closed or no longer exists.", "info");
                 }
@@ -815,6 +833,30 @@
                 showMessageBox("Lost connection to game. Please try refreshing.", "error");
             });
         }
+
+        // Listener for real-time messages from Firestore
+        function setupMessagesListener() {
+            if (unsubscribeMessages) unsubscribeMessages(); // Unsubscribe from previous listener if any
+
+            const appId = getAppId();
+            const messagesRef = collection(db, `artifacts/${appId}/public/data/gameRooms`, gameCode, 'messages');
+            const q = query(messagesRef, orderBy('timestamp'));
+
+            unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                messages = snapshot.docs.map(doc => ({
+                    ...doc.data(),
+                    id: doc.id,
+                    isMine: doc.data().senderId === currentPlayerId // Determine if message is from current user
+                }));
+                // Update message count based on fetched messages for hint cooldown
+                messageCount = messages.filter(msg => msg.role !== 'AI').length;
+                updateUI(); // Re-render chat to show new messages
+            }, (error) => {
+                console.error("Error fetching messages:", error);
+                showMessageBox("Failed to load messages. Please check console.", "error");
+            });
+        }
+
 
         // Handle Character Submission
         async function handleSubmitCharacter() {
