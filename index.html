@@ -244,6 +244,7 @@
 
     <!-- Firebase SDKs -->
     <script type="module">
+        // Firebase CDN Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -266,6 +267,7 @@
         let auth = null;
         let isAuthReady = false;
         let messageCount = 0; // For hint cooldown
+        let isGeneratingHint = false; // To prevent multiple hint requests
 
         // Firebase Configuration (Your provided keys)
         const firebaseConfig = {
@@ -281,7 +283,8 @@
 
         // --- Utility Functions ---
         const generateGameCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-        const getAppId = () => typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; // Fallback for local dev
+        // Fallback for __app_id if not in Canvas environment
+        const getAppId = () => typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // --- DOM Manipulation Helpers ---
         const getElement = (id) => document.getElementById(id);
@@ -527,15 +530,15 @@
                                 </p>
                             ` : ''}
                             ${messages.map(msg => `
-                                <div class="mb-3 flex items-start ${msg.isMine ? 'justify-end' : 'justify-start'} animate-message-pop-in">
-                                    ${!msg.isMine ? getPlayerAvatarHtml(msg.sender, 'sm') : ''}
-                                    <div class="p-3 rounded-lg max-w-[75%] shadow-message transition-all duration-300 ${msg.isMine ? 'bg-red-700 text-white ml-3 border-2 border-red-500' : 'bg-gray-700 text-gray-100 mr-3 border-2 border-gray-600'} ${msg.role === 'AI' ? 'bg-purple-800 border-2 border-purple-600 shadow-neon-purple' : ''}">
+                                <div class="mb-3 flex items-start ${msg.senderId === currentPlayerId ? 'justify-end' : 'justify-start'} animate-message-pop-in">
+                                    ${msg.senderId !== currentPlayerId ? getPlayerAvatarHtml(msg.senderName, 'sm') : ''}
+                                    <div class="p-3 rounded-lg max-w-[75%] shadow-message transition-all duration-300 ${msg.senderId === currentPlayerId ? 'bg-red-700 text-white ml-3 border-2 border-red-500' : 'bg-gray-700 text-gray-100 mr-3 border-2 border-gray-600'} ${msg.role === 'AI' ? 'bg-purple-800 border-2 border-purple-600 shadow-neon-purple' : ''}">
                                         <p class="font-bold text-xs mb-1 opacity-80 text-red-200">
-                                            ${msg.sender} (${msg.role})
+                                            ${msg.senderName} (${msg.role})
                                         </p>
                                         <p class="text-sm leading-relaxed">${msg.text}</p>
                                     </div>
-                                    ${msg.isMine ? getPlayerAvatarHtml(msg.sender, 'sm') : ''}
+                                    ${msg.senderId === currentPlayerId ? getPlayerAvatarHtml(msg.senderName, 'sm') : ''}
                                 </div>
                             `).join('')}
                             <div id="chat-end-ref"></div>
@@ -576,7 +579,7 @@
             // Attach event listeners
             const messageInputEl = getElement('message-input');
             const sendBtn = getElement('send-message-btn');
-            const messagesContainer = getElement('messages-container');
+            const messagesContainer = getElement('messages-container'); // Not directly used for scrolling, but good to have
             const chatEndRef = getElement('chat-end-ref');
 
             messageInputEl.oninput = (e) => currentMessage = e.target.value;
@@ -631,6 +634,7 @@
 
         // --- Game State Management & Render Loop ---
         function updateUI() {
+            // This function is called to re-render the current game phase based on global state
             switch (gamePhase) {
                 case 'home':
                     renderHomePage();
@@ -648,11 +652,13 @@
                     renderEndOfRoundScreen();
                     break;
                 default:
-                    renderHomePage();
+                    renderHomePage(); // Fallback
             }
         }
 
         // --- Firebase Integration ---
+        let unsubscribeGameRoom = null; // Declare here to be accessible globally
+
         async function initFirebase() {
             try {
                 const app = initializeApp(firebaseConfig);
@@ -666,6 +672,7 @@
                     await signInAnonymously(auth);
                 }
 
+                // Listen for auth state changes
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentPlayerId = user.uid;
@@ -749,7 +756,6 @@
         }
 
         // Listener for game room state changes (used in Lobby and Character Setup)
-        let unsubscribeGameRoom = null;
         function setupGameRoomListener() {
             if (unsubscribeGameRoom) unsubscribeGameRoom(); // Unsubscribe from previous listener if any
 
@@ -799,7 +805,8 @@
                     playerCharacter = '';
                     thinkerId = null;
                     guesserId = null;
-                    unsubscribeGameRoom = null; // Clear listener
+                    if (unsubscribeGameRoom) unsubscribeGameRoom(); // Clear listener
+                    unsubscribeGameRoom = null;
                     updateUI();
                     showMessageBox("The game room was closed or no longer exists.", "info");
                 }
@@ -920,7 +927,7 @@
             const targetSeries = guesserId === currentPlayerId ? otherPlayerSeries : playerSeries;
 
             const chatHistoryForLLM = messages.map(msg => ({
-                role: msg.isMine ? "user" : "model",
+                role: msg.senderId === currentPlayerId ? "user" : "model", // Use senderId to determine role for LLM
                 parts: [{ text: msg.text }]
             }));
 
@@ -995,16 +1002,3 @@
     </script>
 </body>
 </html>
-" and am asking a query about/based on this code below.
-I understand you've provided a single HTML file. However, the error message `import React, { useState, useEffect, createContext, useContext, useRef } from 'react';` indicates that the browser is still trying to interpret the code as React. This happens because the `import` statements for React hooks and components are present at the beginning of the `<script type="module">` block.
-
-To fix this, we need to remove all React-specific syntax and replace it with pure Vanilla JavaScript DOM manipulation. This means:
-
-1.  **Removing all `import` statements for React and its hooks (`useState`, `useEffect`, `createContext`, `useContext`, `useRef`).**
-2.  **Replacing React's state management (`useState`) with global JavaScript variables.**
-3.  **Replacing React's lifecycle methods (`useEffect`) with standard `window.onload` or event listeners.**
-4.  **Replacing JSX syntax with plain HTML strings and DOM manipulation methods (`document.getElementById`, `innerHTML`, `addEventListener`).**
-5.  **Removing the `GameContext` as it's a React-specific feature.**
-
-I will now update the Canvas "Anime/Manga/Novel Guess Game (Single HTML File)" to use pure Vanilla JavaScript, ensuring it runs directly in the browser without any React-related errors.
-gnInWithCustomToken, onAuthStateChanged } fro
